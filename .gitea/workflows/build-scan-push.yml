@@ -2,6 +2,8 @@ name: Build, Scan & Publish Image
 
 # Publishing a Gitea release (for example with tag 2026.09.25) builds the image,
 # scans it with Grype (report only), and pushes it to this repository's registry.
+# A release pushes the release tag plus "latest" (non-prereleases only).
+# A manual run builds and pushes only the tag supplied in the input.
 on:
   release:
     types: [published]
@@ -52,7 +54,7 @@ jobs:
             echo "TAG=$SAFE_TAG"
             echo "IMAGE_REF=${IMAGE}:${SAFE_TAG}"
           } >> "$GITHUB_ENV"
-          if [ "${{ github.event.release.prerelease }}" != "true" ]; then
+          if [ -n "${EVENT_TAG:-}" ] && [ "${{ github.event.release.prerelease }}" != "true" ]; then
             echo "PUSH_LATEST=1" >> "$GITHUB_ENV"
           fi
           echo "Resolved image reference: ${IMAGE}:${SAFE_TAG}"
