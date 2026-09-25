@@ -5,6 +5,7 @@ import fs from 'node:fs';
 const source=fs.readFileSync(new URL('../public/app.js', import.meta.url),'utf8');
 const html=fs.readFileSync(new URL('../public/index.html', import.meta.url),'utf8');
 const css=fs.readFileSync(new URL('../public/styles.css', import.meta.url),'utf8');
+const server=fs.readFileSync(new URL('../server.mjs', import.meta.url),'utf8');
 
 test('manual SQLite upload attaches the browser CSRF token',()=>{
   assert.match(source,/setRequestHeader\('X-Kovi-CSRF',csrf\)/);
@@ -159,6 +160,23 @@ test('sidebar and empty state use the kovi logo assets instead of split legacy b
   assert.match(html,/id="themeColor"/);assert.match(source,/themeColor/);
 });
 
-test('the favicon uses the kovi mascot instead of the old svg mark',()=>{
-  assert.match(html,/rel="icon" href="\/favicon\.png"/);assert.doesNotMatch(html,/logo\.svg/);
+test('the favicon set uses the kovi mascot assets instead of the old svg mark',()=>{
+  assert.match(html,/rel="icon" type="image\/png" sizes="96x96" href="\/favicon-96x96\.png"/);
+  assert.match(html,/rel="icon" type="image\/svg\+xml" href="\/favicon\.svg"/);
+  assert.match(html,/rel="shortcut icon" href="\/favicon\.ico"/);
+  assert.match(html,/rel="apple-touch-icon" sizes="180x180" href="\/apple-touch-icon\.png"/);
+  assert.match(html,/rel="manifest" href="\/site\.webmanifest"/);
+  assert.doesNotMatch(html,/favicon\.png/);assert.doesNotMatch(html,/logo\.svg/);
+});
+
+test('the web app manifest brands kovi and points at the installed icons',()=>{
+  const manifest=JSON.parse(fs.readFileSync(new URL('../public/site.webmanifest', import.meta.url),'utf8'));
+  assert.equal(manifest.name,'kovi');assert.equal(manifest.short_name,'kovi');
+  assert.deepEqual(manifest.icons.map(icon=>icon.src),['/web-app-manifest-192x192.png','/web-app-manifest-512x512.png']);
+  for(const icon of manifest.icons){assert.equal(icon.type,'image/png');assert.match(icon.sizes,/^\d+x\d+$/);}
+  assert.match(manifest.theme_color,/^#[0-9a-f]{6}$/i);
+});
+
+test('the static server serves the web app manifest with its manifest MIME type',()=>{
+  assert.match(server,/\.webmanifest':'application\/manifest\+json'/);
 });

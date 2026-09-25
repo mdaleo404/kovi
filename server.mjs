@@ -307,7 +307,7 @@ async function handleApi(req,res,url) {
   return false;
 }
 
-const MIME={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp','.gif':'image/gif','.ico':'image/x-icon','.zip':'application/zip'};
+const MIME={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.webp':'image/webp','.gif':'image/gif','.ico':'image/x-icon','.webmanifest':'application/manifest+json','.zip':'application/zip'};
 async function serveFile(res,filePath,{cache=false}={}) {
   try {
     const st=await fsp.stat(filePath); if(!st.isFile()) return false;
