@@ -1,0 +1,166 @@
+name: Build, Scan & Publish Image
+
+# Publishing a Gitea release (for example with tag 2026.09.25) builds the image,
+# scans it with Grype (report only), and pushes it to this repository's registry.
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Image tag to build and push when run manually
+        required: false
+        default: latest
+
+concurrency:
+  group: image-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-scan-push:
+    runs-on: running-man
+    env:
+      REGISTRY: git.sysmd.uk
+      IMAGE: git.sysmd.uk/mdaleo404/kovi
+      COSIGN_VERSION: v3.0.5
+      GRYPE_VERSION: v0.110.0
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          submodules: false
+          fetch-depth: 0
+
+      - name: Resolve release tag
+        env:
+          EVENT_TAG: ${{ github.event.release.tag_name }}
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+        run: |
+          set -euo pipefail
+          TAG="${EVENT_TAG:-}"
+          if [ -z "$TAG" ]; then TAG="${INPUT_TAG:-}"; fi
+          if [ -z "$TAG" ]; then TAG="${GITHUB_REF_NAME:-}"; fi
+          if [ -z "$TAG" ]; then TAG="$(git describe --tags --exact-match 2>/dev/null || echo "")"; fi
+          if [ -z "$TAG" ]; then echo "Could not determine a tag for this run." >&2; exit 1; fi
+          SAFE_TAG="${TAG//\//-}"
+          case "$SAFE_TAG" in
+            [A-Za-z0-9_]*) ;;
+            *) SAFE_TAG="v$SAFE_TAG" ;;
+          esac
+          {
+            echo "TAG=$SAFE_TAG"
+            echo "IMAGE_REF=${IMAGE}:${SAFE_TAG}"
+          } >> "$GITHUB_ENV"
+          if [ "${{ github.event.release.prerelease }}" != "true" ]; then
+            echo "PUSH_LATEST=1" >> "$GITHUB_ENV"
+          fi
+          echo "Resolved image reference: ${IMAGE}:${SAFE_TAG}"
+
+      - name: Login to registry
+        run: |
+          echo "$REGISTRY_TOKEN" | docker login "${REGISTRY}" -u "$REGISTRY_USER" --password-stdin
+        env:
+          REGISTRY_USER: ${{ secrets.REGISTRY_USER }}
+          REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build image
+        env:
+          GITEA_TOKEN: ${{ secrets.GITEA_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAGS=(-t "${IMAGE_REF}")
+          if [ "${PUSH_LATEST:-}" = "1" ]; then TAGS+=(-t "${IMAGE}:latest"); fi
+          docker buildx build \
+            --load \
+            --no-cache \
+            --secret id=gitea_token,env=GITEA_TOKEN \
+            "${TAGS[@]}" \
+            .
+
+      - name: Install Cosign
+        run: |
+          set -euo pipefail
+          curl -fLO "https://github.com/sigstore/cosign/releases/download/${COSIGN_VERSION}/cosign-linux-amd64"
+          chmod +x cosign-linux-amd64
+          mv cosign-linux-amd64 /usr/local/bin/cosign
+
+      - name: Install Grype
+        run: |
+          set -euo pipefail
+
+          VERSION_NO_V="${GRYPE_VERSION#v}"
+          FILE="grype_${VERSION_NO_V}_linux_amd64.tar.gz"
+          BASE="https://github.com/anchore/grype/releases/download/${GRYPE_VERSION}"
+
+          curl -fLO "${BASE}/${FILE}"
+          curl -fLO "${BASE}/grype_${VERSION_NO_V}_checksums.txt"
+          curl -fLO "${BASE}/grype_${VERSION_NO_V}_checksums.txt.sig"
+          curl -fLO "${BASE}/grype_${VERSION_NO_V}_checksums.txt.pem"
+
+          cosign verify-blob \
+            --signature "grype_${VERSION_NO_V}_checksums.txt.sig" \
+            --certificate "grype_${VERSION_NO_V}_checksums.txt.pem" \
+            --certificate-identity-regexp "https://github.com/anchore/grype" \
+            --certificate-oidc-issuer "https://token.actions.githubusercontent.com" \
+            "grype_${VERSION_NO_V}_checksums.txt"
+
+          CHECK=$(grep " ${FILE}$" "grype_${VERSION_NO_V}_checksums.txt")
+          [ -n "$CHECK" ] || { echo "Missing checksum"; exit 1; }
+
+          echo "$CHECK" | sha256sum -c -
+
+          tar -xzf "${FILE}"
+          mv grype /usr/local/bin/
+
+      - name: Scan image with Grype (report only)
+        id: grype
+        continue-on-error: true
+        run: |
+          grype "${IMAGE_REF}" -o json > grype.json
+
+          echo "Fixable HIGH/CRITICAL vulnerabilities:"
+          jq -r '
+            .matches[]
+            | select(
+                (
+                  .vulnerability.severity == "High" or
+                  .vulnerability.severity == "Critical"
+                )
+                and
+                (
+                  (.vulnerability.fix.versions | length) > 0
+                )
+              )
+            | "\(.artifact.name)@\(.artifact.version) -> \(.vulnerability.id) [\(.vulnerability.severity)] | fixed: \(.vulnerability.fix.versions[0])"
+          ' grype.json
+
+          # Report fixable HIGH/CRITICAL without failing the build.
+          COUNT=$(jq '
+            [
+              .matches[]
+              | select(
+                  (
+                    .vulnerability.severity == "High" or
+                    .vulnerability.severity == "Critical"
+                  )
+                  and
+                  (
+                    (.vulnerability.fix.versions | length) > 0
+                  )
+                )
+            ]
+            | length
+          ' grype.json)
+          echo "Fixable HIGH/CRITICAL count: ${COUNT}"
+          if [ "$COUNT" != "0" ]; then
+            echo "::warning::Grype found ${COUNT} fixable HIGH/CRITICAL vulnerabilities."
+          fi
+
+      - name: Push image
+        run: |
+          docker push "${IMAGE_REF}"
+          if [ "${PUSH_LATEST:-}" = "1" ]; then docker push "${IMAGE}:latest"; fi

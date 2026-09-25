@@ -1,0 +1,17 @@
+name: kovi
+services:
+  kovi:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - kovi-data:/app/data
+    environment:
+      TZ: "${TZ:-UTC}"
+      MAX_FILE_SIZE_MB: "100"
+      CALIBRE_COVER_RESOLVER: "${CALIBRE_COVER_RESOLVER:-auto}"
+      GOOGLE_BOOKS_API_KEY: "${GOOGLE_BOOKS_API_KEY:-}"
+
+volumes:
+  kovi-data:

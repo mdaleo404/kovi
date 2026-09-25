@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta id="themeColor" name="theme-color" content="#f6f3ec">
+  <title>kovi — Your reading, beautifully understood</title>
+  <link rel="icon" href="/favicon.png" type="image/png">
+  <link rel="apple-touch-icon" href="/favicon.png">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <a class="brand" href="/" data-route-view="home" aria-label="kovi home"><span class="brand-mark"><img src="/kovi-mark.png" alt="" width="36" height="36"></span><span>kovi</span></a>
+      <nav class="nav" aria-label="Main navigation">
+        <button class="nav-item active" data-view="home"><span>⌂</span> Home</button>
+        <button class="nav-item" data-view="library"><span>▦</span> Library</button>
+        <button class="nav-item" data-view="calendar"><span>▣</span> Calendar</button>
+        <button class="nav-item" data-view="devices"><span>◇</span> Devices</button>
+        <button class="nav-item" data-view="status"><span>◎</span> Status</button>
+      </nav>
+      <div class="sidebar-foot"><div class="privacy-dot"></div><span>Local-first · your data stays here</span></div>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <div><p class="eyebrow">Your reading room</p><h1 id="pageTitle">Good to see you.</h1></div>
+        <div class="top-actions"><button id="themeButton" class="icon-button" aria-label="Toggle theme">◐</button><button id="importButton" class="primary">Import KOReader data</button></div>
+      </header>
+
+      <section id="homeView" class="view active">
+        <div id="emptyState" class="empty-state hidden">
+          <div class="empty-art"><img src="/kovi-logo.png" alt="A raven reading a book with reading charts" width="384" height="256"></div>
+          <p class="eyebrow">A quieter place for your reading data</p>
+          <h2>Bring your KOReader history to life.</h2>
+          <p>Upload <code>statistics.sqlite</code>. kovi validates it locally, imports your reading history, and finds book covers automatically.</p>
+          <button class="primary large" data-open-import>Choose statistics.sqlite</button>
+          <small>No account. No cloud database. No ebook files uploaded.</small>
+        </div>
+
+        <div id="dashboardContent">
+          <div class="metric-grid" id="metrics"></div>
+
+          <div class="range-toolbar" aria-label="Reading date range">
+            <div class="range-current"><span>Date range</span><strong id="rangeSummary">Last year</strong></div>
+            <div class="range-buttons" role="group" aria-label="Choose reading date range">
+              <button type="button" class="range-button" data-range="week">Last week</button>
+              <button type="button" class="range-button" data-range="month">Last month</button>
+              <button type="button" class="range-button" data-range="three-months">Last three months</button>
+              <button type="button" class="range-button" data-range="six-months">Last six months</button>
+              <button type="button" class="range-button active" data-range="year">Last year</button>
+              <button type="button" class="range-button" data-range="custom">Custom</button>
+            </div>
+          </div>
+          <form id="customRange" class="custom-range hidden">
+            <label>From<input id="customFrom" type="date" required></label>
+            <label>To<input id="customTo" type="date" required></label>
+            <button type="submit" class="primary">Apply dates</button>
+          </form>
+
+          <section class="section-block rhythm-block">
+            <div class="section-heading"><div><p id="rhythmRangeLabel" class="eyebrow">Last year</p><h2>Reading rhythm</h2></div><div class="heatmap-legend"><span>Less</span><i class="day"></i><i class="day l1"></i><i class="day l2"></i><i class="day l3"></i><i class="day l4"></i><span>More</span></div></div>
+            <article class="panel heatmap-panel"><div class="heatmap-layout"><div class="heatmap-weekdays"><span></span><span>Mon</span><span></span><span>Wed</span><span></span><span>Fri</span><span></span></div><div class="heatmap-scroll"><div id="heatmapMonths" class="heatmap-months"></div><div id="heatmap" class="heatmap"></div></div></div><p id="heatmapCaption" class="muted"></p></article>
+          </section>
+
+          <section class="section-block trend-block">
+            <div class="section-heading"><div><p id="trendRangeLabel" class="eyebrow">Last year</p><h2>Daily reading time</h2></div></div>
+            <article class="panel trend-panel">
+              <div class="trend-summary"><div><span>Reading time</span><strong id="trendTotal">0m</strong></div><div><span>Reading days</span><strong id="trendDays">0</strong></div></div>
+              <div id="lineChart" class="line-chart" role="group" aria-label="Daily reading time line graph"></div>
+              <p id="trendCaption" class="muted"></p>
+            </article>
+          </section>
+        </div>
+      </section>
+
+      <section id="libraryView" class="view"><div class="library-toolbar"><div><p class="eyebrow">Library</p><h2>Every book you’ve spent time with.</h2><p id="librarySummary" class="library-summary muted" aria-live="polite"></p></div><div class="library-actions"><div class="library-controls"><label class="search"><span>⌕</span><input id="bookSearch" type="search" placeholder="Search title or author"></label><label class="library-select"><span>Sort by</span><select id="bookSort"><option value="recent">Recently read</option><option value="title">Title</option><option value="author">Author</option><option value="time">Reading time</option><option value="progress">Progress</option></select></label><label class="library-select"><span>Show</span><select id="bookFilter"><option value="all">All books</option><option value="unread">Unread</option><option value="progress">In progress</option><option value="completed">Completed</option></select></label></div><button id="retryCovers" class="text-button">Retry missing covers</button></div></div><div id="bookGrid" class="book-grid"></div></section>
+
+      <section id="calendarView" class="view">
+        <div class="calendar-header">
+          <div><p class="eyebrow">Reading calendar</p><h2>What you read, day by day.</h2></div>
+          <div class="calendar-header-actions">
+            <form id="calendarDateForm" class="calendar-date-search" aria-label="Jump to a specific date">
+              <label for="calendarDateInput">Jump to date</label>
+              <div class="calendar-date-search-controls"><input id="calendarDateInput" type="date" aria-label="Calendar date"><button class="secondary-action" type="submit">Go</button></div>
+            </form>
+            <div class="calendar-controls" aria-label="Calendar month navigation"><button id="calendarPrev" class="icon-button calendar-arrow" type="button" aria-label="Previous month">←</button><button id="calendarToday" class="secondary-action" type="button">Today</button><button id="calendarNext" class="icon-button calendar-arrow" type="button" aria-label="Next month">→</button></div>
+          </div>
+        </div>
+        <div class="calendar-layout">
+          <article class="panel calendar-panel">
+            <div class="calendar-month-heading"><h3 id="calendarMonthTitle">This month</h3><span id="calendarMonthSummary" class="muted"></span></div>
+            <div class="calendar-weekday-row" aria-hidden="true"><span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span></div>
+            <div id="calendarGrid" class="calendar-grid" aria-label="Reading calendar"></div>
+          </article>
+          <aside id="calendarDetail" class="panel calendar-detail" aria-live="polite"><p class="muted">Choose a day to see what you read.</p></aside>
+        </div>
+      </section>
+
+      <section id="bookView" class="view"><button id="bookBack" class="back-button">← Back to library</button><div id="bookPage"></div></section>
+
+      <section id="devicesView" class="view"><div class="devices-header"><div><p class="eyebrow">KOReader sync</p><h2>Your readers, securely paired.</h2><p class="muted">Each device receives its own revocable token. Pairing codes expire after ten minutes.</p></div><div class="top-actions"><a class="secondary-link" href="/kovi-plugin.zip" download>Download plugin</a><button id="pairButton" class="primary">Pair a KOReader</button></div></div><div id="deviceList" class="device-list"></div><article class="panel setup-panel"><p class="eyebrow">Plugin setup</p><h3>Install the kovi plugin</h3><ol><li>Copy <code>plugins/kovi.koplugin</code> into your KOReader <code>plugins</code> folder.</li><li>Restart KOReader and open <strong>Tools → kovi</strong>.</li><li>Enter this server’s URL, then the pairing code generated above.</li><li>Tap <strong>Sync now</strong>. Reading statistics and highlight text are synced together.</li></ol></article></section>
+
+      <section id="statusView" class="view">
+        <div class="status-header"><div><p class="eyebrow">System & data</p><h2>kovi status.</h2><p class="muted">Sync health, storage, recent imports, and portable copies of your reading data.</p></div><button id="refreshStatus" class="secondary-action" type="button">Refresh</button></div>
+        <div id="statusMetrics" class="metric-grid status-metrics"></div>
+        <div class="status-layout">
+          <article class="panel status-panel"><div class="section-heading compact"><div><p class="eyebrow">KOReader</p><h3>Recent syncs</h3></div></div><div id="statusSyncs" class="status-list"></div></article>
+          <article class="panel status-panel"><div class="section-heading compact"><div><p class="eyebrow">Database</p><h3>Recent imports</h3></div></div><div id="statusImports" class="status-list"></div></article>
+        </div>
+        <article class="panel export-panel"><div><p class="eyebrow">Own your data</p><h3>Backup & export</h3><p class="muted">A backup contains a consistent SQLite snapshot plus your selected and historical cover files. Exports are convenient portable views of the same local data.</p></div><div class="export-actions"><a class="primary" href="/api/backup">Download kovi backup</a><a class="secondary-link" href="/api/export/books.csv">Books CSV</a><a class="secondary-link" href="/api/export/highlights.md">Highlights Markdown</a></div></article>
+      </section>
+    </main>
+  </div>
+
+  <dialog id="importDialog" class="modal"><form method="dialog"><button class="modal-close" aria-label="Close">×</button></form><p class="eyebrow">Manual import</p><h2>Upload your KOReader database</h2><p class="muted">Choose <code>statistics.sqlite</code> or <code>statistics.sqlite3</code> from KOReader’s settings folder. kovi opens it read-only and deletes the temporary upload after import.</p><label id="dropZone" class="drop-zone"><input id="fileInput" type="file" accept=".sqlite,.sqlite3,.db,application/vnd.sqlite3"><span class="drop-icon">⇧</span><strong>Drop your database here</strong><span>or choose a file</span></label><div id="importProgress" class="progress-wrap hidden"><div class="progress"><i id="progressBar"></i></div><p id="progressText">Uploading…</p></div><div id="importResult" class="result hidden"></div></dialog>
+
+  <dialog id="pairDialog" class="modal small"><form method="dialog"><button class="modal-close" aria-label="Close">×</button></form><p class="eyebrow">Secure pairing</p><h2>Pair your KOReader</h2><p class="muted">Generate a short-lived code, then enter it in the kovi plugin on your reader. This page updates automatically when the reader pairs.</p><div class="pair-help"><strong>Important:</strong> the reader must use a network-reachable address for this computer. Do not enter <code>localhost</code>, <code>127.0.0.1</code>, or <code>0.0.0.0</code>. <span id="pairOriginHint"></span></div><label class="field">Device label<input id="pairLabel" value="My KOReader" maxlength="80"></label><button id="generatePair" class="primary full">Generate pairing code</button><div id="pairCodeBox" class="pair-code hidden"><span>Your code</span><strong id="pairCode"></strong><small id="pairExpiry"></small><p id="pairStatusText" class="muted">Waiting for your KOReader…</p></div></dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
