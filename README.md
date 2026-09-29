@@ -237,6 +237,12 @@ kovi does not implement web user accounts. Keep the web UI on a trusted LAN/priv
 
 kovi is inspired by [KoInsight](https://github.com/Ko-Insight/KoInsight), an MIT-licensed self-hosted KOReader statistics project, and by KOReader's own statistics model. It preserves the useful manual-SQLite + KOReader-plugin workflow while using a fresh application architecture and UX.
 
+## Support
+
+If you find **kovi** useful, consider supporting its development:
+
+[![Support me on Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/mdaleo404)
+
 ## License
 
 kovi is released under the GNU General Public License v3.0; see [LICENSE](LICENSE). The container image also bundles Debian's unmodified `calibre` package (GPLv3); see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
