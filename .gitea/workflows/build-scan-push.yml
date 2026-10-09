@@ -1,9 +1,10 @@
 name: Build, Scan & Publish Image
 
 # Publishing a Gitea release (for example with tag 2026.09.25) builds the image,
-# scans it with Grype (report only), and pushes it to this repository's registry.
-# A release pushes the release tag plus "latest" (non-prereleases only).
-# A manual run builds and pushes only the tag supplied in the input.
+# scans it with Grype (fails on fixable HIGH/CRITICAL findings), and pushes it to
+# this repository's registry. A release pushes the release tag plus "latest"
+# (non-prereleases only). A manual run builds and pushes only the tag supplied
+# in the input.
 on:
   release:
     types: [published]
@@ -118,9 +119,8 @@ jobs:
           tar -xzf "${FILE}"
           mv grype /usr/local/bin/
 
-      - name: Scan image with Grype (report only)
+      - name: Scan image with Grype
         id: grype
-        continue-on-error: true
         run: |
           grype "${IMAGE_REF}" -o json > grype.json
 
@@ -140,7 +140,7 @@ jobs:
             | "\(.artifact.name)@\(.artifact.version) -> \(.vulnerability.id) [\(.vulnerability.severity)] | fixed: \(.vulnerability.fix.versions[0])"
           ' grype.json
 
-          # Report fixable HIGH/CRITICAL without failing the build.
+          # Fail the build on fixable HIGH/CRITICAL vulnerabilities.
           COUNT=$(jq '
             [
               .matches[]
@@ -159,7 +159,8 @@ jobs:
           ' grype.json)
           echo "Fixable HIGH/CRITICAL count: ${COUNT}"
           if [ "$COUNT" != "0" ]; then
-            echo "::warning::Grype found ${COUNT} fixable HIGH/CRITICAL vulnerabilities."
+            echo "::error::Grype found ${COUNT} fixable HIGH/CRITICAL vulnerabilities."
+            exit 1
           fi
 
       - name: Push image
