@@ -189,6 +189,7 @@ The logger intentionally redacts fields that look like tokens, authorization val
 |---|---:|---|
 | `HOST` | `127.0.0.1` | Listen address (Docker sets `0.0.0.0`) |
 | `PORT` | `3000` | HTTP port |
+| `TRUST_PROXY` | `0` | Trusted reverse-proxy hop count for resolving the client address. `0` (or any non-numeric value) ignores `X-Forwarded-For` and uses the socket peer; set it only to the exact number of proxy hops you operate |
 | `DATA_PATH` | `./data` | Persistent data directory |
 | `TZ` | system zone (`UTC` in containers) | IANA time zone used for dashboard and calendar dates, for example `Europe/Rome` |
 | `MAX_FILE_SIZE_MB` | `100` | Maximum manual SQLite upload size |
@@ -199,6 +200,8 @@ The logger intentionally redacts fields that look like tokens, authorization val
 | `GOOGLE_BOOKS_API_KEY` | empty | Optional Google Books API key for higher/identified quota; native Google Books discovery also works without one |
 | `COVER_WORKER_CONCURRENCY` | `2` | Number of books resolved concurrently (clamped to 1–4) |
 
+Request handling is hardened independently of configuration: HTTP timeouts are pinned (`headersTimeout` 60s, `requestTimeout` 300s, `keepAliveTimeout` 5s) instead of inheriting Node's runtime defaults; pairing attempts are rate limited per client address and the in-memory attempt table is bounded; `/api/backup` is single-flight, so a concurrent request is rejected with `429` rather than writing a second archive; and the unauthenticated plugin ping is logged at most once per interval.
+
 ## Tests
 
 ```bash
@@ -206,7 +209,7 @@ npm test
 npm run fixture -- /tmp/fixture-statistics.sqlite3
 ```
 
-The suite covers incremental sync cursors/overlap, changed-sidecar/tombstone plumbing, sync diagnostics, cover job/history/candidate behavior, backup archive contents, SQLite validation/idempotence, KOReader-manual filtering, pairing state, authenticated sync, annotation replacement/deletion behavior, multilingual/series-title cover matching, ISBN enrichment, bad-image fallback, embedded-cover plumbing, Calibre CLI argument safety, Calibre identify fallback, direct cover-only/Google Images fallback, preservation of Calibre Google/ISBN identifiers, deterministic Google Books ID cover recovery, Calibre cover acceptance behavior, outdated-plugin warnings, browser CSRF handling, dedicated book routing, live pairing polling, the filterable heatmap and reading-time trend graph, cross-source reading-session deduplication, and plugin network diagnostics.
+The suite covers incremental sync cursors/overlap, changed-sidecar/tombstone plumbing, sync diagnostics, cover job/history/candidate behavior, backup archive contents, SQLite validation/idempotence, KOReader-manual filtering, pairing state, authenticated sync, annotation replacement/deletion behavior, multilingual/series-title cover matching, ISBN enrichment, bad-image fallback, embedded-cover plumbing, Calibre CLI argument safety, Calibre identify fallback, direct cover-only/Google Images fallback, preservation of Calibre Google/ISBN identifiers, deterministic Google Books ID cover recovery, Calibre cover acceptance behavior, outdated-plugin warnings, browser CSRF handling, dedicated book routing, live pairing polling, the filterable heatmap and reading-time trend graph, cross-source reading-session deduplication, plugin network diagnostics, and HTTP server hardening (pairing rate limiting, trusted-proxy client resolution, ping log throttling, and backup serialization).
 
 ## Architecture
 
@@ -231,7 +234,7 @@ The frontend is plain semantic HTML/CSS/ES modules and the kovi backend itself u
 
 ## Security note
 
-kovi does not implement web user accounts. Keep the web UI on a trusted LAN/private network, or place it behind an authenticated reverse proxy. Device plugin endpoints are separately authenticated with revocable tokens. See [SECURITY.md](SECURITY.md).
+kovi does not implement web user accounts, and the default deployment is unauthenticated: any client that can reach the port can read the library, trigger exports, and download backups. Keep the web UI on a trusted LAN/private network, or place it behind an authenticated reverse proxy. `TRUST_PROXY` only corrects client-address resolution behind a proxy you control; it is not access control. Device plugin endpoints are separately authenticated with revocable tokens. See [SECURITY.md](SECURITY.md).
 
 ## Acknowledgements
 

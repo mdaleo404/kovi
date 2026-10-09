@@ -1,4 +1,5 @@
 import http from 'node:http';
+import net from 'node:net';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
@@ -27,6 +28,7 @@ const TIME_ZONE = resolveTimeZone(process.env.TZ);
 const MAX_FILE_BYTES = Number(process.env.MAX_FILE_SIZE_MB || 100) * 1024 * 1024;
 const MAX_JSON_BYTES = Number(process.env.MAX_JSON_MB || 20) * 1024 * 1024;
 const MAX_COVER_BYTES = 4 * 1024 * 1024;
+const TRUST_PROXY_HOPS = Number.parseInt(process.env.TRUST_PROXY || '0', 10) || 0;
 const HEADERS_TIMEOUT_MS = 60_000;
 const REQUEST_TIMEOUT_MS = 300_000;
 const KEEP_ALIVE_TIMEOUT_MS = 5_000;
@@ -103,13 +105,23 @@ function routeParam(pathname, pattern) {
 function requireWebCsrf(req) {
   if (req.headers['x-kovi-csrf'] !== WEB_CSRF) throw Object.assign(new Error('Missing browser request token.'), {status:403});
 }
+// Resolve the effective client address. By default the direct peer wins.
+// TRUST_PROXY opts in to trusting that many reverse-proxy hops and reads the
+// client address from X-Forwarded-For, validated as a literal IP address.
+function clientAddress(req) {
+  const direct=req.socket.remoteAddress || null;
+  if(TRUST_PROXY_HOPS<1) return direct;
+  const chain=String(req.headers['x-forwarded-for']||'').split(',').map(x=>x.trim()).filter(Boolean);
+  const candidate=chain[chain.length-TRUST_PROXY_HOPS];
+  return candidate && net.isIP(candidate) ? candidate : direct;
+}
 function prunePairAttempts(now) {
   for (const [key,row] of pairAttempts) {
     if (now-row.start > PAIR_WINDOW_MS) pairAttempts.delete(key);
   }
 }
 function checkPairRate(req) {
-  const key=req.socket.remoteAddress;
+  const key=clientAddress(req);
   if(!key) return;
   const now=Date.now();
   const row=pairAttempts.get(key) || {start:now,count:0};
@@ -137,7 +149,7 @@ async function handleApi(req,res,url) {
     const now=Date.now();
     if(now-lastPingLogAt>=PING_LOG_INTERVAL_MS){
       lastPingLogAt=now;
-      info('plugin.ping','KOReader ping received.',{remote:req.socket.remoteAddress || 'unknown',userAgent:cleanText(req.headers['user-agent'],120) || 'none'});
+      info('plugin.ping','KOReader ping received.',{remote:clientAddress(req) || 'unknown',userAgent:cleanText(req.headers['user-agent'],120) || 'none'});
     }
     return json(res,200,{ok:true,name:'kovi',version:VERSION},securityHeaders());
   }
@@ -197,10 +209,10 @@ async function handleApi(req,res,url) {
     const body=await readJson(req,32*1024);
     const paired=consumePairingCode(db,body.code,{deviceId:body.device_id,model:cleanText(body.model,120),version:cleanText(body.version,40)});
     if(!paired) {
-      warn('pairing.rejected','Pairing attempt rejected because the code was invalid, expired, or already used.',{remote:req.socket.remoteAddress || 'unknown',deviceId:cleanText(body.device_id,128),model:cleanText(body.model,120)});
+      warn('pairing.rejected','Pairing attempt rejected because the code was invalid, expired, or already used.',{remote:clientAddress(req) || 'unknown',deviceId:cleanText(body.device_id,128),model:cleanText(body.model,120)});
       return json(res,401,{error:'Pairing code is invalid, expired, or already used.'},securityHeaders());
     }
-    info('device.paired','KOReader paired successfully.',{deviceId:paired.deviceId,model:cleanText(body.model,120),pluginVersion:cleanText(body.version,40),remote:req.socket.remoteAddress || 'unknown'});
+    info('device.paired','KOReader paired successfully.',{deviceId:paired.deviceId,model:cleanText(body.model,120),pluginVersion:cleanText(body.version,40),remote:clientAddress(req) || 'unknown'});
     if(!versionAtLeast(body.version,MIN_COVER_PLUGIN_VERSION)) warn('plugin.outdated','Paired KOReader plugin is too old for embedded-cover and ISBN sync.',{deviceId:paired.deviceId,pluginVersion:cleanText(body.version,40),minimumVersion:MIN_COVER_PLUGIN_VERSION,latestVersion:LATEST_PLUGIN_VERSION});
     return json(res,200,{message:'KOReader paired with kovi.',token:paired.token,device_id:paired.deviceId,latest_plugin_version:LATEST_PLUGIN_VERSION,update_recommended:!versionAtLeast(body.version,LATEST_PLUGIN_VERSION)},securityHeaders());
   }
@@ -208,7 +220,7 @@ async function handleApi(req,res,url) {
   if(req.method==='POST' && url.pathname==='/api/plugin/import') {
     const device=authenticateDevice(db,req.headers.authorization);
     if(!device) {
-      warn('plugin.sync.rejected','Rejected plugin sync with missing or invalid device token.',{remote:req.socket.remoteAddress || 'unknown'});
+      warn('plugin.sync.rejected','Rejected plugin sync with missing or invalid device token.',{remote:clientAddress(req) || 'unknown'});
       return json(res,401,{error:'Device token is missing or invalid.'},securityHeaders());
     }
     const body=await readJson(req);
@@ -236,7 +248,7 @@ async function handleApi(req,res,url) {
   if(req.method==='POST' && url.pathname==='/api/plugin/cover') {
     const device=authenticateDevice(db,req.headers.authorization);
     if(!device) {
-      warn('cover.embedded.rejected','Rejected embedded cover upload with missing or invalid device token.',{remote:req.socket.remoteAddress || 'unknown'});
+      warn('cover.embedded.rejected','Rejected embedded cover upload with missing or invalid device token.',{remote:clientAddress(req) || 'unknown'});
       return json(res,401,{error:'Device token is missing or invalid.'},securityHeaders());
     }
     const md5=cleanText(req.headers['x-kovi-book-md5'],128);
@@ -266,7 +278,7 @@ async function handleApi(req,res,url) {
         cb(null,chunk);
       }
     });
-    info('import.sqlite.start','Manual KOReader database upload started.',{filename,contentLength:contentLength||undefined,remote:req.socket.remoteAddress || 'unknown'});
+    info('import.sqlite.start','Manual KOReader database upload started.',{filename,contentLength:contentLength||undefined,remote:clientAddress(req) || 'unknown'});
     try {
       await pipeline(req,limiter,fs.createWriteStream(tempPath,{flags:'wx',mode:0o600}));
       if(size<16 || first.toString('ascii',0,16)!=='SQLite format 3\u0000') throw Object.assign(new Error('The selected file is not a SQLite database.'),{status:400});

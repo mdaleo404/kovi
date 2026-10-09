@@ -2,6 +2,8 @@
 
 kovi is designed for personal/self-hosted deployments. It intentionally avoids accounts in the MVP, so the web UI should be treated like an administrative interface: do not expose it directly to the public internet without an authenticated reverse proxy or private network such as Tailscale.
 
+The default deployment is therefore unauthenticated: read endpoints, CSV/Markdown exports, and `/api/backup` are reachable by any client that can connect. kovi mitigates abuse — a same-origin CSRF token, a bounded per-source pairing rate limit, explicit request timeouts, a single-flight backup guard, and throttled plugin-ping logging — but none of these authenticate a caller. Network reachability is the access-control boundary.
+
 ## Import safety
 
 - Browser database uploads use a raw `PUT` body and are streamed into a unique, mode-0600 temporary file.
@@ -14,6 +16,7 @@ kovi is designed for personal/self-hosted deployments. It intentionally avoids a
 ## Plugin safety
 
 - KOReader devices pair with a one-use code that expires after 10 minutes.
+- Pairing attempts are rate limited per client address (30 per 10-minute window), and the in-memory attempt table is bounded, so an unauthenticated client cannot grow it without limit.
 - Successful pairing issues a random per-device bearer token; only its SHA-256 hash is stored.
 - Tokens are independently revocable from the Devices screen.
 - Plugin JSON has strict request-size and row-count limits.
@@ -34,6 +37,8 @@ kovi is designed for personal/self-hosted deployments. It intentionally avoids a
 ## Network boundary
 
 The application does not enable permissive CORS. Browser API access is same-origin. The intentional outbound traffic is automatic cover lookup against Open Library, the Google Books API, Calibre metadata providers, and fixed Google Books cover URLs learned from Calibre identifiers. Plugin cover uploads are inbound, authenticated device requests.
+
+`TRUST_PROXY` is an opt-in integer defaulting to `0`. At `0` — and for any non-numeric value — kovi ignores `X-Forwarded-For` and keys rate limits and log fields on the socket peer, so a spoofed header changes nothing. Set it only to the exact number of reverse-proxy hops you operate; kovi then resolves the client address from `X-Forwarded-For`, validates the selected hop as a literal IP address, and falls back to the socket peer when the chain is too short or the value is not an IP. This changes client-address resolution only; it is not authentication or access control.
 
 ## Calibre cover resolver
 
