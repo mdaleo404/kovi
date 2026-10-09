@@ -27,8 +27,17 @@ const TIME_ZONE = resolveTimeZone(process.env.TZ);
 const MAX_FILE_BYTES = Number(process.env.MAX_FILE_SIZE_MB || 100) * 1024 * 1024;
 const MAX_JSON_BYTES = Number(process.env.MAX_JSON_MB || 20) * 1024 * 1024;
 const MAX_COVER_BYTES = 4 * 1024 * 1024;
+const HEADERS_TIMEOUT_MS = 60_000;
+const REQUEST_TIMEOUT_MS = 300_000;
+const KEEP_ALIVE_TIMEOUT_MS = 5_000;
+const PAIR_WINDOW_MS = 10 * 60_000;
+const PAIR_MAX_ATTEMPTS = 30;
+const PAIR_ATTEMPTS_MAX_ENTRIES = 5_000;
+const PING_LOG_INTERVAL_MS = 10 * 60_000;
 const WEB_CSRF = randomId(24);
 const pairAttempts = new Map();
+let lastPingLogAt = 0;
+let backupInFlight = false;
 
 function versionParts(value){return String(value||'0').split('.').map(x=>Number.parseInt(x,10)||0).slice(0,3)}
 function versionAtLeast(value,minimum){const a=versionParts(value),b=versionParts(minimum);for(let i=0;i<3;i++){if((a[i]||0)>(b[i]||0))return true;if((a[i]||0)<(b[i]||0))return false}return true}
@@ -94,12 +103,23 @@ function routeParam(pathname, pattern) {
 function requireWebCsrf(req) {
   if (req.headers['x-kovi-csrf'] !== WEB_CSRF) throw Object.assign(new Error('Missing browser request token.'), {status:403});
 }
+function prunePairAttempts(now) {
+  for (const [key,row] of pairAttempts) {
+    if (now-row.start > PAIR_WINDOW_MS) pairAttempts.delete(key);
+  }
+}
 function checkPairRate(req) {
-  const key=req.socket.remoteAddress || 'unknown', now=Date.now(), windowMs=10*60_000;
+  const key=req.socket.remoteAddress;
+  if(!key) return;
+  const now=Date.now();
   const row=pairAttempts.get(key) || {start:now,count:0};
-  if(now-row.start>windowMs){row.start=now;row.count=0}
+  if(now-row.start>PAIR_WINDOW_MS){row.start=now;row.count=0}
   row.count++;pairAttempts.set(key,row);
-  if(row.count>30) throw Object.assign(new Error('Too many pairing attempts. Try again later.'),{status:429});
+  if(pairAttempts.size>PAIR_ATTEMPTS_MAX_ENTRIES){
+    prunePairAttempts(now);
+    while(pairAttempts.size>PAIR_ATTEMPTS_MAX_ENTRIES) pairAttempts.delete(pairAttempts.keys().next().value);
+  }
+  if(row.count>PAIR_MAX_ATTEMPTS) throw Object.assign(new Error('Too many pairing attempts. Try again later.'),{status:429});
 }
 
 function storageStats(){
@@ -113,7 +133,12 @@ async function handleApi(req,res,url) {
   if(req.method==='GET' && url.pathname==='/api/session') return json(res,200,{csrf:WEB_CSRF},securityHeaders());
   if(req.method==='GET' && url.pathname==='/api/health') return json(res,200,{ok:true,name:'kovi',version:VERSION},securityHeaders());
   if(req.method==='GET' && url.pathname==='/api/plugin/ping') {
-    info('plugin.ping','KOReader ping received.',{remote:req.socket.remoteAddress || 'unknown',userAgent:cleanText(req.headers['user-agent'],120) || 'none'});
+    // Throttle the event so unauthenticated pings cannot grow the log without bound.
+    const now=Date.now();
+    if(now-lastPingLogAt>=PING_LOG_INTERVAL_MS){
+      lastPingLogAt=now;
+      info('plugin.ping','KOReader ping received.',{remote:req.socket.remoteAddress || 'unknown',userAgent:cleanText(req.headers['user-agent'],120) || 'none'});
+    }
     return json(res,200,{ok:true,name:'kovi',version:VERSION},securityHeaders());
   }
   if(req.method==='GET' && url.pathname==='/api/books') return json(res,200,{books:listBooks(db)},securityHeaders());
@@ -134,9 +159,13 @@ async function handleApi(req,res,url) {
   if(req.method==='GET' && url.pathname==='/api/export/books.csv'){sendBooksCsv(res,db,securityHeaders());return true}
   if(req.method==='GET' && url.pathname==='/api/export/highlights.md'){sendHighlightsMarkdown(res,db,securityHeaders());return true}
   if(req.method==='GET' && url.pathname==='/api/backup'){
-    const backupPath=path.join(UPLOAD_DIR,`kovi-backup-${Date.now()}-${randomId(6)}.tar.gz`);
-    await createBackupArchive(db,DATA_DIR,backupPath,{version:VERSION});
-    try{const st=await fsp.stat(backupPath);res.writeHead(200,securityHeaders({'Content-Type':'application/gzip','Content-Disposition':`attachment; filename="kovi-backup-${new Date().toISOString().slice(0,10)}.tar.gz"`,'Content-Length':st.size,'Cache-Control':'no-store'}));await pipeline(fs.createReadStream(backupPath),res)}finally{await fsp.rm(backupPath,{force:true}).catch(()=>{})}
+    if(backupInFlight) return json(res,429,{error:'A backup is already being generated.'},securityHeaders({'Retry-After':'5'}));
+    backupInFlight=true;
+    try {
+      const backupPath=path.join(UPLOAD_DIR,`kovi-backup-${Date.now()}-${randomId(6)}.tar.gz`);
+      await createBackupArchive(db,DATA_DIR,backupPath,{version:VERSION});
+      try{const st=await fsp.stat(backupPath);res.writeHead(200,securityHeaders({'Content-Type':'application/gzip','Content-Disposition':`attachment; filename="kovi-backup-${new Date().toISOString().slice(0,10)}.tar.gz"`,'Content-Length':st.size,'Cache-Control':'no-store'}));await pipeline(fs.createReadStream(backupPath),res)}finally{await fsp.rm(backupPath,{force:true}).catch(()=>{})}
+    } finally { backupInFlight=false; }
     return true;
   }
 
@@ -341,5 +370,9 @@ const server=http.createServer(async(req,res)=>{
     if(!res.headersSent) json(res,status,{error:err.status?err.message:'Something went wrong.'},securityHeaders()); else res.destroy();
   }
 });
+
+server.headersTimeout=HEADERS_TIMEOUT_MS;
+server.requestTimeout=REQUEST_TIMEOUT_MS;
+server.keepAliveTimeout=KEEP_ALIVE_TIMEOUT_MS;
 
 server.listen(PORT,HOST,()=>info('startup.ready','kovi is ready.',{version:VERSION,url:`http://${HOST}:${PORT}`,dataDir:DATA_DIR,timeZone:TIME_ZONE,maxUploadMb:Math.round(MAX_FILE_BYTES/1024/1024)}));
