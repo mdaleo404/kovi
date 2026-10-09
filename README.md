@@ -1,4 +1,4 @@
-[![Licence](https://img.shields.io/badge/GPL--3.0--only-orange?label=Licence)](https://git.sysmd.uk/mdaleo404/kovi/src/branch/main/LICENSE)
+[![Licence](https://img.shields.io/badge/GPL--3.0--or--later-orange?label=Licence)](https://git.sysmd.uk/mdaleo404/kovi/src/branch/main/LICENSE)
 [![Gitea Release](https://img.shields.io/gitea/v/release/mdaleo404/kovi?gitea_url=https%3A%2F%2Fgit.sysmd.uk%2F&style=flat&color=orange&logo=gitea)](https://git.sysmd.uk/mdaleo404/kovi/releases)
 [![Node.js](https://img.shields.io/badge/Node.js-22%2B-339933?logo=node.js&logoColor=white&style=flat)](https://nodejs.org/)
 
