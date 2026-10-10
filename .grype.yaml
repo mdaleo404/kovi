@@ -1,0 +1,3 @@
+# Managed by renovate-runner/scripts/reconcile-grype.sh - do not edit by hand.
+# Entries are High,Critical findings with a fix that no base image update provides.
+ignore: []
