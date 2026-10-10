@@ -1,0 +1,91 @@
+name: Build, Scan & Publish Dev
+
+# Build, scan, and reconcile on push to main and nightly. Publishes a moving
+# "dev" tag on real pushes only, once the reconciler gate passes.
+on:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: image-main
+  cancel-in-progress: false
+
+jobs:
+  build-scan-push:
+    runs-on: running-man
+    env:
+      REGISTRY: git.sysmd.uk
+      IMAGE: git.sysmd.uk/mdaleo404/kovi
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          submodules: false
+          fetch-depth: 0
+
+      - name: Resolve dev tag
+        run: |
+          set -euo pipefail
+          echo "IMAGE_REF=${IMAGE}:dev" >> "$GITHUB_ENV"
+          echo "Dev image: ${IMAGE}:dev"
+
+      - name: Login to registry
+        run: |
+          echo "$REGISTRY_TOKEN" | docker login "${REGISTRY}" -u "$REGISTRY_USER" --password-stdin
+        env:
+          REGISTRY_USER: ${{ secrets.REGISTRY_USER }}
+          REGISTRY_TOKEN: ${{ secrets.REGISTRY_TOKEN }}
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build image
+        run: |
+          set -euo pipefail
+          docker buildx build --load --no-cache -t "${IMAGE_REF}" .
+
+      - name: Install Grype
+        uses: https://git.sysmd.uk/mdaleo404/actions/install-grype@v1
+
+      - name: Scan image with Grype
+        id: scan
+        continue-on-error: true
+        uses: https://git.sysmd.uk/mdaleo404/actions/scan-image@v1
+        with:
+          image: ${{ env.IMAGE_REF }}
+          fail-on-fixable: 'false'
+
+      - name: Reconcile Grype ignores
+        id: reconcile
+        continue-on-error: true
+        env:
+          GITEA_TOKEN: ${{ secrets.AUTOUPDATE_TOKEN }}
+        run: |
+          set -euo pipefail
+          curl -fsSL -H "Authorization: token ${GITEA_TOKEN}" \
+            "https://git.sysmd.uk/api/v1/repos/Homelab/renovate-runner/raw/scripts/reconcile-grype.sh?ref=main" \
+            -o /tmp/reconcile-grype.sh
+          bash /tmp/reconcile-grype.sh
+
+      - name: Notify Node-RED on vulnerabilities
+        if: steps.reconcile.outcome == 'failure'
+        run: |
+          jq -n --arg repo "${GITHUB_REPOSITORY,,}" '{ repo: $repo }' \
+          | curl -s -X POST https://nodered.sysmd.uk/vulns-alert \
+              -H "Content-Type: application/json" \
+              --data-binary @-
+
+      - name: Fail on actionable vulnerabilities
+        if: steps.reconcile.outcome == 'failure'
+        run: exit 1
+
+      - name: Push dev image
+        if: github.event_name != 'schedule' && steps.reconcile.outcome != 'failure'
+        run: |
+          set -euo pipefail
+          docker push "${IMAGE_REF}"
