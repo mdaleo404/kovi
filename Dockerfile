@@ -1,4 +1,4 @@
-FROM node:22-trixie-slim@sha256:8eb619e402eaede1748a3c8173bffab391592812e85136452f781741c7242ddf
+FROM node:22-trixie-slim@sha256:96c9160ec5923092200d94f778954135ca8eb925ba7080d7bea91276db87cfe5
 
 # kovi does not vendor or copy Calibre code. The container installs Debian's
 # unmodified Calibre package and calls its fetch-ebook-metadata CLI as a separate
