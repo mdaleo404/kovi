@@ -42,6 +42,18 @@ jobs:
           fi
           echo "Promoting ${IMAGE}:dev -> ${IMAGE}:${TAG}"
 
+      - name: Verify dev image version
+        run: |
+          set -euo pipefail
+          VERSION="${TAG#v}"
+          IMAGE_VERSION="$(docker run --rm --network none --entrypoint cat "${SOURCE_REF}" /app/package.json | jq -r '.version')"
+          if [ "${IMAGE_VERSION}" != "${VERSION}" ]; then
+            echo "Refusing to release ${TAG}: the dev image reports ${IMAGE_VERSION}." >&2
+            echo "Wait for the main build to publish a fresh dev image, or set package.json to ${VERSION}." >&2
+            exit 1
+          fi
+          echo "Dev image reports ${IMAGE_VERSION}; promoting to ${TAG}."
+
       - name: Promote image
         run: |
           set -euo pipefail
