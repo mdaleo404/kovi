@@ -13,11 +13,11 @@ import { json, randomId, cleanText } from './lib/security.mjs';
 import { info, warn, error as logError } from './lib/logger.mjs';
 import { createBackupArchive, sendBooksCsv, sendHighlightsMarkdown } from './lib/exports.mjs';
 
-const VERSION = '2026.09.25';
-const LATEST_PLUGIN_VERSION = '2026.09.25';
+const VERSION = '2026.11.13';
 const MIN_COVER_PLUGIN_VERSION = '2026.09.25';
 const MIN_INCREMENTAL_PLUGIN_VERSION = '2026.09.25';
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
+const LATEST_PLUGIN_VERSION = readPluginVersion(path.join(ROOT, 'plugins', 'kovi.koplugin', 'const.lua'));
 const DATA_DIR = path.resolve(process.env.DATA_PATH || path.join(ROOT, 'data'));
 const PUBLIC_DIR = path.join(ROOT, 'public');
 const UPLOAD_DIR = path.join(DATA_DIR, 'uploads');
@@ -41,6 +41,11 @@ const pairAttempts = new Map();
 let lastPingLogAt = 0;
 let backupInFlight = false;
 
+function readPluginVersion(file){
+  const match = /VERSION\s*=\s*"([^"]+)"/.exec(fs.readFileSync(file, 'utf8'));
+  if (!match) throw new Error(`Cannot read the plugin version from ${file}.`);
+  return match[1];
+}
 function versionParts(value){return String(value||'0').split('.').map(x=>Number.parseInt(x,10)||0).slice(0,3)}
 function versionAtLeast(value,minimum){const a=versionParts(value),b=versionParts(minimum);for(let i=0;i<3;i++){if((a[i]||0)>(b[i]||0))return true;if((a[i]||0)<(b[i]||0))return false}return true}
 function deviceView(d){return {...d,needs_update:!versionAtLeast(d.plugin_version,LATEST_PLUGIN_VERSION),supports_cover_sync:versionAtLeast(d.plugin_version,MIN_COVER_PLUGIN_VERSION),supports_incremental_sync:versionAtLeast(d.plugin_version,MIN_INCREMENTAL_PLUGIN_VERSION),latest_plugin_version:LATEST_PLUGIN_VERSION,min_cover_plugin_version:MIN_COVER_PLUGIN_VERSION,min_incremental_plugin_version:MIN_INCREMENTAL_PLUGIN_VERSION}}

@@ -45,9 +45,12 @@ test('server detects plugins too old for embedded-cover requests',()=>{
   assert.match(server,/update_recommended/);
 });
 
-test('packaged plugin version is aligned with kovi 2026.09.25',()=>{
+test('plugin version is declared once and surfaced in its metadata',()=>{
   const constants=fs.readFileSync(new URL('../plugins/kovi.koplugin/const.lua', import.meta.url),'utf8');
-  assert.match(constants,/2026\.09\.25/);
+  const meta=fs.readFileSync(new URL('../plugins/kovi.koplugin/_meta.lua', import.meta.url),'utf8');
+  const version=/VERSION\s*=\s*"([^"]+)"/.exec(constants)?.[1];
+  assert.match(version||'',/^\d{4}\.\d{2}\.\d{2}$/);
+  assert.ok(meta.includes(`v${version}`));
 });
 
 
